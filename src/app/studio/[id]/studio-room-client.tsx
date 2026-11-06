@@ -2,22 +2,19 @@
 
 import * as React from "react";
 import Link from "next/link";
-import Image from "next/image";
 import {
-  Radio,
   ArrowLeft,
   Copy,
   Check,
-  Camera,
-  Mic,
-  Sliders,
-  ShieldCheck,
-  VideoOff,
-  MicOff,
+  Video,
+  AlertCircle,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getPublicSiteUrl } from "@/lib/utils/site-url";
 import { HostGuestManager } from "./host-guest-manager";
+import { LiveMediaRoom } from "@/components/studio/live-media-room";
+import { getHostLiveKitTokenAction } from "@/app/studio/actions/livekit-actions";
 import type { StudioRow } from "@/types/database";
 
 interface StudioRoomClientProps {
@@ -32,12 +29,16 @@ interface StudioRoomClientProps {
 
 export function StudioRoomClient({ studio, host }: StudioRoomClientProps) {
   const [copiedLink, setCopiedLink] = React.useState(false);
-  const [micMuted, setMicMuted] = React.useState(false);
-  const [cameraOff, setCameraOff] = React.useState(false);
+  const [isLiveActive, setIsLiveActive] = React.useState(false);
+  const [isTokenLoading, setIsTokenLoading] = React.useState(false);
+  const [liveKitToken, setLiveKitToken] = React.useState<string | null>(null);
+  const [liveKitUrl, setLiveKitUrl] = React.useState<string | null>(null);
+  const [tokenError, setTokenError] = React.useState<string | null>(null);
 
-  const roomUrl = typeof window !== "undefined" && window.location.href
-    ? window.location.href
-    : `${getPublicSiteUrl()}/studio/${studio.id}`;
+  const roomUrl =
+    typeof window !== "undefined" && window.location.href
+      ? window.location.href
+      : `${getPublicSiteUrl()}/studio/${studio.id}`;
 
   const handleCopy = async () => {
     try {
@@ -49,13 +50,65 @@ export function StudioRoomClient({ studio, host }: StudioRoomClientProps) {
     }
   };
 
-  const hostInitials = (host.name || "SH")
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .substring(0, 2)
-    .toUpperCase();
+  const handleEnterLiveRoom = async () => {
+    setIsTokenLoading(true);
+    setTokenError(null);
 
+    const res = await getHostLiveKitTokenAction(studio.id);
+
+    if (!res.success || !res.token || !res.url) {
+      setTokenError(res.error || "Failed to initialize live media session.");
+      setIsTokenLoading(false);
+      return;
+    }
+
+    setLiveKitToken(res.token);
+    setLiveKitUrl(res.url);
+    setIsLiveActive(true);
+    setIsTokenLoading(false);
+  };
+
+  const handleLeaveLiveRoom = () => {
+    setIsLiveActive(false);
+    setLiveKitToken(null);
+    setLiveKitUrl(null);
+  };
+
+  // If host has entered the live media session
+  if (isLiveActive && liveKitToken && liveKitUrl) {
+    return (
+      <LiveMediaRoom
+        token={liveKitToken}
+        liveKitUrl={liveKitUrl}
+        displayName={host.name}
+        isHost={true}
+        roomTitle={studio.name}
+        onLeave={handleLeaveLiveRoom}
+        headerSlot={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCopy}
+            className="text-xs"
+          >
+            {copiedLink ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-400 mr-1.5" />
+                <span className="text-emerald-400">Copied</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5 mr-1.5" />
+                <span>Room Link</span>
+              </>
+            )}
+          </Button>
+        }
+      />
+    );
+  }
+
+  // Pre-join Studio Host Lobby & Management View
   return (
     <div className="min-h-screen bg-[#090a0f] text-slate-100 flex flex-col">
       {/* Top Bar */}
@@ -70,8 +123,8 @@ export function StudioRoomClient({ studio, host }: StudioRoomClientProps) {
           </Link>
           <div className="h-4 w-px bg-[#1a1e2b]" />
           <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-            <span className="text-xs font-medium text-amber-300">Preparing Studio</span>
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+            <span className="text-xs font-medium text-emerald-300">Studio Ready</span>
           </div>
         </div>
 
@@ -82,121 +135,82 @@ export function StudioRoomClient({ studio, host }: StudioRoomClientProps) {
             size="sm"
             onClick={handleCopy}
             className="text-xs"
+            title="Copy Host direct link (owner only)"
           >
             {copiedLink ? (
               <>
                 <Check className="w-3.5 h-3.5 text-emerald-400 mr-1.5" />
-                <span className="text-emerald-400 font-medium">Link Copied</span>
+                <span className="text-emerald-400 font-medium">Host Link Copied</span>
               </>
             ) : (
               <>
                 <Copy className="w-3.5 h-3.5 mr-1.5" />
-                <span>Copy Room Link</span>
+                <span>Copy Host Link</span>
               </>
             )}
           </Button>
         </div>
       </header>
 
-      {/* Main Studio Waiting Room */}
+      {/* Main Studio Lobby */}
       <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-8 flex flex-col justify-center">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          {/* Left Column: AV Stage Viewport Placeholder */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          {/* Left Column: Live Entrance Card */}
           <div className="lg:col-span-7 space-y-4">
-            <div className="relative aspect-video w-full rounded-2xl border border-[#1a1e2b] bg-[#0e1118] overflow-hidden flex flex-col items-center justify-center p-6 shadow-2xl">
-              {/* Host Avatar Center */}
-              <div className="relative w-24 h-24 rounded-3xl overflow-hidden border-2 border-violet-500/40 bg-[#131722] flex items-center justify-center shadow-lg">
-                {host.avatarUrl ? (
-                  <Image
-                    src={host.avatarUrl}
-                    alt={host.name}
-                    fill
-                    className="object-cover"
-                    unoptimized
-                  />
-                ) : (
-                  <span className="text-3xl font-bold text-violet-400">{hostInitials}</span>
-                )}
+            <div className="p-8 rounded-2xl border border-[#1a1e2b] bg-[#0e1118] space-y-6 shadow-2xl">
+              <div className="flex items-center justify-between pb-4 border-b border-[#1a1e2b]">
+                <div>
+                  <span className="text-[10px] uppercase font-mono tracking-wider text-violet-400">
+                    Real-Time Media Studio
+                  </span>
+                  <h2 className="text-xl font-bold text-white tracking-tight">
+                    {studio.name}
+                  </h2>
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-violet-600/15 border border-violet-500/30 flex items-center justify-center text-violet-400">
+                  <Video className="w-6 h-6" />
+                </div>
               </div>
 
-              {/* Host Name Label */}
-              <div className="mt-4 text-center">
-                <p className="text-sm font-semibold text-white">{host.name}</p>
-                <p className="text-xs text-violet-400 flex items-center justify-center gap-1 mt-0.5 font-medium">
-                  <ShieldCheck className="w-3.5 h-3.5" /> Studio Host
-                </p>
-              </div>
-
-              {/* Status Overlay */}
-              <div className="absolute top-4 left-4 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-[11px] text-slate-300">
-                <Radio className="w-3.5 h-3.5 text-violet-400 animate-pulse" />
-                <span>{studio.name}</span>
-              </div>
-
-              {/* Controls bar placeholder */}
-              <div className="absolute bottom-4 inset-x-0 flex items-center justify-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setMicMuted((prev) => !prev)}
-                  className={`p-3 rounded-xl border transition ${
-                    micMuted
-                      ? "bg-rose-500/20 border-rose-500/40 text-rose-300"
-                      : "bg-[#131722]/90 border-[#1a1e2b] text-slate-200 hover:text-white hover:bg-white/10"
-                  }`}
-                  title={micMuted ? "Unmute Microphone" : "Mute Microphone"}
-                >
-                  {micMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setCameraOff((prev) => !prev)}
-                  className={`p-3 rounded-xl border transition ${
-                    cameraOff
-                      ? "bg-rose-500/20 border-rose-500/40 text-rose-300"
-                      : "bg-[#131722]/90 border-[#1a1e2b] text-slate-200 hover:text-white hover:bg-white/10"
-                  }`}
-                  title={cameraOff ? "Turn Camera On" : "Turn Camera Off"}
-                >
-                  {cameraOff ? <VideoOff className="w-4 h-4" /> : <Camera className="w-4 h-4" />}
-                </button>
-
-                <button
-                  type="button"
-                  className="p-3 rounded-xl border border-[#1a1e2b] bg-[#131722]/90 text-slate-200 hover:text-white hover:bg-white/10 transition"
-                  title="Audio & Video Settings"
-                >
-                  <Sliders className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            <p className="text-center text-xs text-slate-500">
-              Camera and microphone setup hardware engine will initialize here in Phase 2.
-            </p>
-          </div>
-
-          {/* Right Column: Studio Information & Readiness Checklist */}
-          <div className="lg:col-span-5 space-y-6">
-            <div className="space-y-2">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-violet-400 px-2 py-0.5 rounded-md bg-violet-600/10 border border-violet-500/20">
-                Phase 1 Preview
-              </span>
-              <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-                {studio.name}
-              </h1>
-              {studio.description ? (
-                <p className="text-xs text-slate-400 leading-relaxed">{studio.description}</p>
-              ) : (
-                <p className="text-xs text-slate-500 italic">No description provided for this studio.</p>
+              {tokenError && (
+                <div className="p-3.5 rounded-xl border border-rose-500/30 bg-rose-950/20 text-xs text-rose-300 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{tokenError}</span>
+                </div>
               )}
+
+              <p className="text-sm text-slate-300 leading-relaxed">
+                Connect directly with your guests in crystal-clear real-time video and audio powered by LiveKit WebRTC.
+              </p>
+
+              <div className="pt-2">
+                <Button
+                  size="lg"
+                  variant="primary"
+                  onClick={handleEnterLiveRoom}
+                  disabled={isTokenLoading}
+                  className="w-full justify-center text-sm font-semibold rounded-xl h-12 shadow-lg shadow-violet-600/25"
+                >
+                  {isTokenLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      <span>Connecting Media Room...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Video className="w-4 h-4 mr-2" />
+                      <span>Start Real-Time Session</span>
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
 
-            {/* Unique Room URL Box */}
-            <div className="p-4 rounded-xl border border-[#1a1e2b] bg-[#0e1118] space-y-2">
-              <label className="text-[11px] font-medium text-slate-300 flex items-center justify-between">
-                <span>Studio Host Direct Link</span>
-                <span className="text-violet-400 font-mono text-[10px]">Owner Session</span>
+            {/* Direct Host Room URL Box */}
+            <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-950/10 space-y-2">
+              <label className="text-[11px] font-medium text-amber-200/90 flex items-center justify-between">
+                <span>Studio Host Direct Link (Host Only)</span>
+                <span className="text-amber-400 font-mono text-[10px]">Private Owner Access</span>
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -209,17 +223,19 @@ export function StudioRoomClient({ studio, host }: StudioRoomClientProps) {
                   variant="outline"
                   size="sm"
                   onClick={handleCopy}
-                  className="shrink-0"
+                  className="shrink-0 text-xs"
                 >
                   {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </Button>
               </div>
-              <p className="text-[11px] text-slate-500">
-                This direct room link is only accessible to you as the authenticated studio owner. For guests, use the Guest Invitation generator below.
+              <p className="text-[11px] text-amber-300/80 leading-relaxed">
+                ⚠️ <strong>Do not send this link to guests.</strong> This direct URL is protected and only opens for your authenticated host account. To invite guests without accounts, use <strong>Create Guest Link</strong> in the panel on the right.
               </p>
             </div>
+          </div>
 
-            {/* Host Guest Manager (Secure Invitations & Real-Time Waiting Room) */}
+          {/* Right Column: Host Guest Manager */}
+          <div className="lg:col-span-5 space-y-6">
             <HostGuestManager studioId={studio.id} />
           </div>
         </div>
