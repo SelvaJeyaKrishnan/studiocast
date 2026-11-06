@@ -2,12 +2,15 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Eye, EyeOff, CheckCircle2, AlertCircle } from "lucide-react";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { createClient } from "@/lib/supabase/client";
 
 export function SignupForm() {
+  const router = useRouter();
   const [fullName, setFullName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -23,7 +26,8 @@ export function SignupForm() {
     terms?: string;
   }>({});
   const [isLoading, setIsLoading] = React.useState(false);
-  const [statusMessage, setStatusMessage] = React.useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
 
   const validate = () => {
     const newErrors: {
@@ -64,21 +68,57 @@ export function SignupForm() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatusMessage(null);
+    setErrorMessage(null);
+    setSuccessMessage(null);
 
     if (!validate()) return;
 
     setIsLoading(true);
+    const supabase = createClient();
 
-    // Simulate standard client-side request latency, then display clearly that auth is planned
-    setTimeout(() => {
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          data: {
+            full_name: fullName.trim(),
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+        },
+      });
+
+      if (error) {
+        if (error.message.includes("fetch") || error.message.includes("URL")) {
+          setErrorMessage(
+            "Could not connect to Supabase. Please configure your NEXT_PUBLIC_SUPABASE_URL in .env.local."
+          );
+        } else {
+          setErrorMessage(error.message);
+        }
+        setIsLoading(false);
+        return;
+      }
+
+      if (data?.user && !data.session) {
+        // Email confirmation is required by Supabase default settings
+        setSuccessMessage(
+          "Account created! Please check your email to verify your address before signing in."
+        );
+        setIsLoading(false);
+      } else if (data?.session) {
+        // Email confirmation is disabled, user is immediately logged in
+        setSuccessMessage("Account created successfully! Redirecting to dashboard...");
+        router.push("/dashboard");
+        router.refresh();
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "An unexpected error occurred during registration.";
+      setErrorMessage(message);
       setIsLoading(false);
-      setStatusMessage(
-        "Authentication coming soon. Account creation (Supabase Auth) is scheduled for an upcoming release."
-      );
-    }, 700);
+    }
   };
 
   return (
@@ -94,13 +134,24 @@ export function SignupForm() {
           </p>
         </div>
 
-        {/* Coming soon notice modal / banner */}
-        {statusMessage && (
-          <div className="mb-6 p-4 rounded-xl border border-violet-500/30 bg-violet-950/20 text-xs text-slate-300 flex items-start gap-3">
-            <CheckCircle2 className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
+        {/* Success message banner */}
+        {successMessage && (
+          <div className="mb-6 p-4 rounded-xl border border-emerald-500/30 bg-emerald-950/20 text-xs text-emerald-300 flex items-start gap-3">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-white mb-0.5">Form Validated</p>
-              <p>{statusMessage}</p>
+              <p className="font-semibold text-white mb-0.5">Registration Successful</p>
+              <p>{successMessage}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Error message banner */}
+        {errorMessage && (
+          <div className="mb-6 p-4 rounded-xl border border-rose-500/30 bg-rose-950/20 text-xs text-rose-300 flex items-start gap-3">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-white mb-0.5">Registration Error</p>
+              <p>{errorMessage}</p>
             </div>
           </div>
         )}

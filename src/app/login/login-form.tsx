@@ -2,20 +2,23 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Eye, EyeOff, Info, CheckCircle2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Eye, EyeOff, CheckCircle2, AlertCircle } from "lucide-react";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { createClient } from "@/lib/supabase/client";
 
 export function LoginForm() {
+  const router = useRouter();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [rememberMe, setRememberMe] = React.useState(false);
   const [showPassword, setShowPassword] = React.useState(false);
   const [errors, setErrors] = React.useState<{ email?: string; password?: string }>({});
   const [isLoading, setIsLoading] = React.useState(false);
-  const [statusMessage, setStatusMessage] = React.useState<string | null>(null);
-  const [forgotPasswordNotice, setForgotPasswordNotice] = React.useState(false);
+  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
 
   const validate = () => {
     const newErrors: { email?: string; password?: string } = {};
@@ -36,22 +39,75 @@ export function LoginForm() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleForgotPassword = async () => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setErrors((prev) => ({ ...prev, email: "Enter your email address to reset password" }));
+      return;
+    }
+
+    setIsLoading(true);
+    const supabase = createClient();
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+      });
+
+      if (error) {
+        setErrorMessage(error.message);
+      } else {
+        setSuccessMessage("Password reset email sent! Please check your inbox.");
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to send reset link";
+      setErrorMessage(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatusMessage(null);
-    setForgotPasswordNotice(false);
+    setErrorMessage(null);
+    setSuccessMessage(null);
 
     if (!validate()) return;
 
     setIsLoading(true);
+    const supabase = createClient();
 
-    // Simulate standard client-side request latency, then display clearly that auth is planned
-    setTimeout(() => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) {
+        // Helpful error for unconfigured Supabase URL
+        if (error.message.includes("fetch") || error.message.includes("URL")) {
+          setErrorMessage(
+            "Could not connect to Supabase. Please configure your NEXT_PUBLIC_SUPABASE_URL in .env.local."
+          );
+        } else {
+          setErrorMessage(error.message);
+        }
+        setIsLoading(false);
+        return;
+      }
+
+      if (data?.session) {
+        setSuccessMessage("Sign in successful! Redirecting to dashboard...");
+        router.push("/dashboard");
+        router.refresh();
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "An unexpected error occurred.";
+      setErrorMessage(message);
       setIsLoading(false);
-      setStatusMessage(
-        "Authentication coming soon. Backend integration (Supabase Auth) is scheduled for an upcoming release."
-      );
-    }, 700);
+    }
   };
 
   return (
@@ -67,21 +123,25 @@ export function LoginForm() {
           </p>
         </div>
 
-        {/* Coming soon notice modal / banner */}
-        {statusMessage && (
-          <div className="mb-6 p-4 rounded-xl border border-violet-500/30 bg-violet-950/20 text-xs text-slate-300 flex items-start gap-3">
-            <CheckCircle2 className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
+        {/* Success message banner */}
+        {successMessage && (
+          <div className="mb-6 p-4 rounded-xl border border-emerald-500/30 bg-emerald-950/20 text-xs text-emerald-300 flex items-start gap-3">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-white mb-0.5">Form Validated</p>
-              <p>{statusMessage}</p>
+              <p className="font-semibold text-white mb-0.5">Success</p>
+              <p>{successMessage}</p>
             </div>
           </div>
         )}
 
-        {forgotPasswordNotice && (
-          <div className="mb-6 p-3.5 rounded-xl border border-[#1a1e2b] bg-[#131722] text-xs text-slate-300 flex items-center gap-2.5">
-            <Info className="w-4 h-4 text-violet-400 shrink-0" />
-            <span>Password reset functionality is coming soon.</span>
+        {/* Error message banner */}
+        {errorMessage && (
+          <div className="mb-6 p-4 rounded-xl border border-rose-500/30 bg-rose-950/20 text-xs text-rose-300 flex items-start gap-3">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-white mb-0.5">Authentication Error</p>
+              <p>{errorMessage}</p>
+            </div>
           </div>
         )}
 
@@ -141,10 +201,7 @@ export function LoginForm() {
 
             <button
               type="button"
-              onClick={() => {
-                setStatusMessage(null);
-                setForgotPasswordNotice(true);
-              }}
+              onClick={handleForgotPassword}
               className="text-slate-400 hover:text-violet-400 transition-colors focus:outline-none"
             >
               Forgot password?

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import {
   LayoutDashboard,
   Mic2,
@@ -11,16 +12,26 @@ import {
   X,
   ChevronDown,
   ChevronUp,
+  Radio,
 } from "lucide-react";
 import { Logo } from "@/components/shared/logo";
 import { cn } from "@/lib/utils";
 
 export type DashboardTab =
   | "overview"
+  | "studios"
   | "recordings"
   | "projects"
   | "settings"
   | "profile";
+
+export interface DashboardUserProps {
+  id: string;
+  fullName: string;
+  email: string;
+  avatarUrl: string | null;
+  isRealUser: boolean;
+}
 
 interface DashboardSidebarProps {
   currentTab: DashboardTab;
@@ -29,6 +40,7 @@ interface DashboardSidebarProps {
   onCloseMobile: () => void;
   onLogoutClick: () => void;
   onProfileMenuClick?: (action: string) => void;
+  currentUser: DashboardUserProps;
 }
 
 export function DashboardSidebar({
@@ -38,11 +50,13 @@ export function DashboardSidebar({
   onCloseMobile,
   onLogoutClick,
   onProfileMenuClick,
+  currentUser,
 }: DashboardSidebarProps) {
   const [profileDropdownOpen, setProfileDropdownOpen] = React.useState(false);
 
   const navItems = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
+    { id: "studios", label: "Studios", icon: Radio },
     { id: "recordings", label: "My Recordings", icon: Mic2 },
     { id: "projects", label: "Projects", icon: FolderKanban },
     { id: "settings", label: "Settings", icon: Settings },
@@ -62,6 +76,15 @@ export function DashboardSidebar({
       onCloseMobile();
     }
   };
+
+  const initials = currentUser.fullName
+    ? currentUser.fullName
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .substring(0, 2)
+        .toUpperCase()
+    : "SC";
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-[#0e1118] border-r border-[#1a1e2b] px-4 py-6 justify-between">
@@ -114,8 +137,10 @@ export function DashboardSidebar({
         {profileDropdownOpen && (
           <div className="absolute bottom-full left-0 right-0 mb-2 p-2 rounded-xl border border-[#1a1e2b] bg-[#131722] shadow-xl space-y-1 animate-in fade-in duration-150 z-20">
             <div className="px-2.5 py-1.5 border-b border-[#1a1e2b]/80 mb-1">
-              <p className="text-xs font-semibold text-white">Alex Rivera</p>
-              <p className="text-[10px] text-slate-400 font-mono">alex@domain.com (Demo)</p>
+              <p className="text-xs font-semibold text-white">{currentUser.fullName}</p>
+              <p className="text-[10px] text-slate-400 font-mono truncate">
+                {currentUser.email} {currentUser.isRealUser ? "" : "(Demo)"}
+              </p>
             </div>
             <button
               type="button"
@@ -153,15 +178,25 @@ export function DashboardSidebar({
           aria-label="User Profile Menu"
         >
           <div className="flex items-center gap-2.5 overflow-hidden">
-            <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
-              AR
+            <div className="relative w-8 h-8 rounded-lg overflow-hidden bg-violet-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
+              {currentUser.avatarUrl ? (
+                <Image
+                  src={currentUser.avatarUrl}
+                  alt={currentUser.fullName}
+                  fill
+                  className="object-cover"
+                  unoptimized
+                />
+              ) : (
+                <span>{initials}</span>
+              )}
             </div>
             <div className="flex flex-col overflow-hidden">
               <span className="text-xs font-medium text-white truncate">
-                Alex Rivera
+                {currentUser.fullName}
               </span>
               <span className="text-[10px] text-slate-400 truncate font-mono">
-                alex@domain.com
+                {currentUser.email}
               </span>
             </div>
           </div>

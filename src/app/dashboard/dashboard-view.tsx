@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   Menu,
   Search,
@@ -13,40 +15,72 @@ import {
   Users,
   ChevronRight,
   Info,
-  Sliders,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DashboardSidebar,
   type DashboardTab,
+  type DashboardUserProps,
 } from "@/components/dashboard/dashboard-sidebar";
-import { sampleRecordings, sampleProjects } from "@/config/dashboard-data";
+import { ProfileSettingsView } from "@/components/dashboard/profile-settings-view";
+import { ProjectManagementView } from "@/components/dashboard/project-management-view";
+import { StudioManagementView } from "@/components/dashboard/studio-management-view";
+import { CreateStudioModal } from "@/components/dashboard/create-studio-modal";
+import { sampleRecordings } from "@/config/dashboard-data";
+import { createClient } from "@/lib/supabase/client";
 
-export function DashboardView() {
+interface DashboardViewProps {
+  currentUser: DashboardUserProps;
+}
+
+export function DashboardView({ currentUser: initialUser }: DashboardViewProps) {
+  const router = useRouter();
+  const [currentUser, setCurrentUser] = React.useState<DashboardUserProps>(initialUser);
   const [currentTab, setCurrentTab] = React.useState<DashboardTab>("overview");
   const [mobileSidebarOpen, setMobileSidebarOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [statusNotice, setStatusNotice] = React.useState<string | null>(null);
+  const [createStudioModalOpen, setCreateStudioModalOpen] = React.useState(false);
 
-  const handleCreateStudio = () => {
-    setStatusNotice("Create New Studio functionality is coming soon. Studio Engine integration is in progress.");
+  const handleProfileUpdated = (updated: Partial<DashboardUserProps>) => {
+    setCurrentUser((prev) => ({ ...prev, ...updated }));
   };
 
-  const handleLogout = () => {
-    setStatusNotice("Authentication & session management are scheduled for upcoming release. (Session logged out)");
+  const handleCreateStudio = () => {
+    setCreateStudioModalOpen(true);
+  };
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Ignored if offline/unconfigured
+    }
+    router.push("/");
+    router.refresh();
   };
 
   const handleProfileMenuAction = (action: string) => {
-    setStatusNotice(`${action} view is a demo preview. Settings integration is in progress.`);
+    if (action === "Profile Settings") {
+      setCurrentTab("profile");
+    } else if (action === "Preferences") {
+      setCurrentTab("settings");
+    } else {
+      setStatusNotice(`${action} view is a demo preview.`);
+    }
   };
 
   const filteredRecordings = sampleRecordings.filter((rec) =>
     rec.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const filteredProjects = sampleProjects.filter((p) =>
-    p.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const initials = (currentUser.fullName || "SC")
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .substring(0, 2)
+    .toUpperCase();
 
   return (
     <div className="flex min-h-screen bg-[#090a0f] text-slate-100">
@@ -58,6 +92,7 @@ export function DashboardView() {
         onCloseMobile={() => setMobileSidebarOpen(false)}
         onLogoutClick={handleLogout}
         onProfileMenuClick={handleProfileMenuAction}
+        currentUser={currentUser}
       />
 
       {/* Main Content Area */}
@@ -87,7 +122,7 @@ export function DashboardView() {
             </div>
           </div>
 
-          {/* Right Header Action */}
+          {/* Right Header Action & Avatar Quick Trigger */}
           <div className="flex items-center gap-3">
             <Button
               variant="primary"
@@ -99,6 +134,26 @@ export function DashboardView() {
               <span className="hidden sm:inline">Create New Studio</span>
               <span className="sm:hidden">New Studio</span>
             </Button>
+
+            <button
+              type="button"
+              onClick={() => setCurrentTab("profile")}
+              className="relative w-8 h-8 rounded-lg overflow-hidden border border-[#1a1e2b] hover:border-violet-500/50 bg-violet-600 flex items-center justify-center text-white text-xs font-bold transition focus:outline-none focus:ring-2 focus:ring-violet-500"
+              title="Open Profile Settings"
+              aria-label="Open Profile Settings"
+            >
+              {currentUser.avatarUrl ? (
+                <Image
+                  src={currentUser.avatarUrl}
+                  alt={currentUser.fullName}
+                  fill
+                  className="object-cover"
+                  unoptimized
+                />
+              ) : (
+                <span>{initials}</span>
+              )}
+            </button>
           </div>
         </header>
 
@@ -121,75 +176,63 @@ export function DashboardView() {
             </div>
           )}
 
-          {/* SECTION: Settings Tab View */}
-          {currentTab === "settings" && (
-            <section className="space-y-6">
-              <div>
-                <h1 className="text-2xl font-semibold text-white tracking-tight">Studio Settings</h1>
-                <p className="text-xs text-slate-400 mt-1">Configure audio capture parameters and cloud storage allocations</p>
-              </div>
-              <div className="p-8 rounded-2xl border border-[#1a1e2b] bg-[#0e1118] space-y-4">
-                <div className="flex items-center gap-3 text-violet-400">
-                  <Sliders className="w-5 h-5" />
-                  <h2 className="text-sm font-semibold text-white">Default Recording Standards</h2>
-                </div>
-                <p className="text-xs text-slate-400 leading-relaxed max-w-lg">
-                  Settings controls will allow configuring target 48kHz audio buffer rates, camera resolutions, and automated Supabase bucket sync policies in subsequent phases.
-                </p>
-                <div className="pt-2">
-                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-violet-950/60 text-violet-300 border border-violet-800/40">
-                    Planned Settings Engine
-                  </span>
-                </div>
-              </div>
-            </section>
+          {/* SECTION: Profile & Settings Tab View */}
+          {(currentTab === "profile" || currentTab === "settings") && (
+            <ProfileSettingsView
+              currentUser={currentUser}
+              onProfileUpdated={handleProfileUpdated}
+            />
           )}
 
-          {/* SECTION: Profile Tab View */}
-          {currentTab === "profile" && (
-            <section className="space-y-6">
-              <div>
-                <h1 className="text-2xl font-semibold text-white tracking-tight">Creator Profile</h1>
-                <p className="text-xs text-slate-400 mt-1">Manage personal account details and studio identity</p>
-              </div>
-              <div className="p-8 rounded-2xl border border-[#1a1e2b] bg-[#0e1118] space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-violet-600 flex items-center justify-center text-white font-bold text-sm">
-                    AR
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-semibold text-white">Alex Rivera</h2>
-                    <p className="text-xs text-slate-400 font-mono">alex@domain.com (Demo)</p>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-400 max-w-lg">
-                  Profile editing and custom studio branding customization will be enabled upon authentication integration.
-                </p>
-                <div className="pt-2">
-                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-[#131722] text-slate-400 border border-[#1a1e2b]">
-                    Demo Profile
-                  </span>
-                </div>
-              </div>
-            </section>
+          {/* SECTION: Studios Tab View (Real Supabase PostgreSQL Studios) */}
+          {currentTab === "studios" && (
+            <StudioManagementView
+              userId={currentUser.id}
+              isRealUser={currentUser.isRealUser}
+              searchQuery={searchQuery}
+              onOpenCreateStudio={handleCreateStudio}
+            />
           )}
 
-          {/* SECTION: Overview, My Recordings, or Projects */}
-          {(currentTab === "overview" || currentTab === "recordings" || currentTab === "projects") && (
+          {/* SECTION: Projects Tab View (Real Supabase PostgreSQL Project Management) */}
+          {currentTab === "projects" && (
+            <ProjectManagementView
+              userId={currentUser.id}
+              isRealUser={currentUser.isRealUser}
+              searchQuery={searchQuery}
+            />
+          )}
+
+          {/* SECTION: Overview or My Recordings */}
+          {(currentTab === "overview" || currentTab === "recordings") && (
             <>
               {/* 1. Welcome Section */}
               <section className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2">
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">
-                    {currentTab === "overview" && "Welcome back!"}
-                    {currentTab === "recordings" && "My Recordings"}
-                    {currentTab === "projects" && "Studio Projects"}
-                  </h1>
-                  <p className="text-sm text-slate-400 mt-1">
-                    {currentTab === "overview" && "Manage your creative workspace."}
-                    {currentTab === "recordings" && "Review and export recorded sessions."}
-                    {currentTab === "projects" && "Organize studio sessions and series."}
-                  </p>
+                <div className="flex items-center gap-4">
+                  {/* Real Profile Avatar in Welcome Section */}
+                  <div className="relative w-14 h-14 rounded-2xl overflow-hidden border border-[#242a3b] bg-[#131722] flex items-center justify-center shrink-0 shadow-md">
+                    {currentUser.avatarUrl ? (
+                      <Image
+                        src={currentUser.avatarUrl}
+                        alt={currentUser.fullName}
+                        fill
+                        className="object-cover"
+                        unoptimized
+                      />
+                    ) : (
+                      <span className="text-xl font-bold text-violet-400">{initials}</span>
+                    )}
+                  </div>
+
+                  <div>
+                    <h1 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">
+                      Welcome back, {currentUser.fullName.split(" ")[0]}!
+                    </h1>
+                    <p className="text-sm text-slate-400 mt-1">
+                      {currentTab === "overview" && "Manage your creative workspace."}
+                      {currentTab === "recordings" && "Review and export recorded sessions."}
+                    </p>
+                  </div>
                 </div>
 
                 <Button
@@ -362,99 +405,61 @@ export function DashboardView() {
                 </section>
               )}
 
-              {/* 4. Projects Section (Shown on Overview and Projects tabs) */}
-              {(currentTab === "overview" || currentTab === "projects") && (
+              {/* 4. Projects Preview Section (Shown on Overview tab) */}
+              {currentTab === "overview" && (
                 <section className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-lg font-semibold text-white">
-                        {currentTab === "overview" ? "Recent Projects" : "All Projects"}
-                      </h2>
-                      <p className="text-xs text-slate-400">Organized workspaces and podcast series (Demo)</p>
+                      <h2 className="text-lg font-semibold text-white">Projects Workspace</h2>
+                      <p className="text-xs text-slate-400">Organized workspaces and podcast series</p>
                     </div>
-                    {currentTab === "overview" && (
-                      <button
-                        type="button"
-                        onClick={() => setCurrentTab("projects")}
-                        className="text-xs text-violet-400 hover:text-violet-300 font-medium transition flex items-center gap-1"
-                      >
-                        <span>View all</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentTab("projects")}
+                      className="text-xs text-violet-400 hover:text-violet-300 font-medium transition flex items-center gap-1"
+                    >
+                      <span>Manage projects</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
                   </div>
 
-                  {filteredProjects.length === 0 ? (
-                    /* Projects Empty State */
-                    <div className="p-12 text-center rounded-2xl border border-dashed border-[#1a1e2b] bg-[#0e1118]/60 space-y-3">
-                      <div className="w-12 h-12 rounded-xl bg-blue-600/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mx-auto">
+                  <div className="p-6 rounded-2xl border border-[#1a1e2b] bg-[#0e1118] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-12 h-12 rounded-xl bg-violet-600/10 border border-violet-500/20 text-violet-400 flex items-center justify-center shrink-0">
                         <FolderKanban className="w-6 h-6" />
                       </div>
-                      <h3 className="text-sm font-medium text-white">No projects found</h3>
-                      <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                        {searchQuery
-                          ? `No projects matching "${searchQuery}". Try a different keyword.`
-                          : "Create a project workspace to organize multiple episodes and guest recordings."}
-                      </p>
-                      <div className="pt-2">
-                        {searchQuery ? (
-                          <Button variant="outline" size="sm" onClick={() => setSearchQuery("")}>
-                            Clear search
-                          </Button>
-                        ) : (
-                          <Button variant="primary" size="sm" onClick={handleCreateStudio}>
-                            Create New Studio
-                          </Button>
-                        )}
+                      <div>
+                        <h3 className="text-sm font-medium text-white">Supabase PostgreSQL Project Management Active</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Create, edit, search, and manage your isolated cloud projects with secure Row Level Security.
+                        </p>
                       </div>
                     </div>
-                  ) : (
-                    /* Projects Grid */
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                      {filteredProjects.map((project) => (
-                        <div
-                          key={project.id}
-                          className="p-5 rounded-2xl border border-[#1a1e2b] bg-[#0e1118] hover:border-[#242a3b] transition-all flex flex-col justify-between"
-                        >
-                          <div>
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="w-8 h-8 rounded-lg bg-blue-600/10 flex items-center justify-center text-blue-400">
-                                <FolderKanban className="w-4 h-4" />
-                              </div>
-                              <span className="text-[10px] text-slate-500 font-mono">
-                                {project.lastModified}
-                              </span>
-                            </div>
-
-                            <h3 className="text-sm font-semibold text-white mb-1.5">
-                              {project.name}
-                            </h3>
-                            <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                              {project.description}
-                            </p>
-                          </div>
-
-                          <div className="pt-3 border-t border-[#1a1e2b] flex items-center justify-between text-xs text-slate-400">
-                            <span>{project.recordingsCount} recordings</span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setStatusNotice(`Project "${project.name}" view is a demo preview.`)
-                              }
-                              className="text-violet-400 hover:text-violet-300 font-medium"
-                            >
-                              Open
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => setCurrentTab("projects")}
+                      className="shrink-0"
+                    >
+                      Open Projects
+                    </Button>
+                  </div>
                 </section>
               )}
             </>
           )}
         </main>
+
+        {/* Global Create Studio Modal */}
+        <CreateStudioModal
+          isOpen={createStudioModalOpen}
+          onClose={() => setCreateStudioModalOpen(false)}
+          userId={currentUser.id}
+          isRealUser={currentUser.isRealUser}
+          onStudioCreated={() => {
+            setCurrentTab("studios");
+          }}
+        />
       </div>
     </div>
   );
