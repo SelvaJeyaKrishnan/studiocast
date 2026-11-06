@@ -89,7 +89,7 @@ export function LoginForm() {
         // Helpful error for unconfigured Supabase URL
         if (error.message.includes("fetch") || error.message.includes("URL")) {
           setErrorMessage(
-            "Could not connect to Supabase. Please configure your NEXT_PUBLIC_SUPABASE_URL in .env.local."
+            "Could not connect to Supabase. Please verify your NEXT_PUBLIC_SUPABASE_URL and network connection."
           );
         } else {
           setErrorMessage(error.message);

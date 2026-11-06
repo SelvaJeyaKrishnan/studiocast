@@ -14,10 +14,10 @@ import {
   ShieldCheck,
   VideoOff,
   MicOff,
-  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getPublicSiteUrl } from "@/lib/utils/site-url";
+import { HostGuestManager } from "./host-guest-manager";
 import type { StudioRow } from "@/types/database";
 
 interface StudioRoomClientProps {
@@ -195,8 +195,8 @@ export function StudioRoomClient({ studio, host }: StudioRoomClientProps) {
             {/* Unique Room URL Box */}
             <div className="p-4 rounded-xl border border-[#1a1e2b] bg-[#0e1118] space-y-2">
               <label className="text-[11px] font-medium text-slate-300 flex items-center justify-between">
-                <span>Unique Room Invitation Link</span>
-                <span className="text-violet-400 font-mono text-[10px]">Secure UUID</span>
+                <span>Studio Host Direct Link</span>
+                <span className="text-violet-400 font-mono text-[10px]">Owner Session</span>
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -215,31 +215,12 @@ export function StudioRoomClient({ studio, host }: StudioRoomClientProps) {
                 </Button>
               </div>
               <p className="text-[11px] text-slate-500">
-                Only authenticated studio owners currently have access. Guest participant links and WebRTC engine arrive in the next phase.
+                This direct room link is only accessible to you as the authenticated studio owner. For guests, use the Guest Invitation generator below.
               </p>
             </div>
 
-            {/* Studio Readiness Card */}
-            <div className="p-4 rounded-xl border border-[#1a1e2b] bg-[#0e1118] space-y-3">
-              <h3 className="text-xs font-semibold text-white flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-violet-400" />
-                <span>Next Generation Studio Engine</span>
-              </h3>
-              <ul className="space-y-2 text-xs text-slate-400">
-                <li className="flex items-start gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
-                  <span>Unique room URL generated and owner-authenticated.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
-                  <span>Protected server route with strict Row Level Security.</span>
-                </li>
-                <li className="flex items-start gap-2 text-slate-500">
-                  <span className="w-1.5 h-1.5 rounded-full bg-slate-600 mt-1.5 shrink-0 ml-1" />
-                  <span>WebRTC P2P multi-track streaming (Phase 2).</span>
-                </li>
-              </ul>
-            </div>
+            {/* Host Guest Manager (Secure Invitations & Real-Time Waiting Room) */}
+            <HostGuestManager studioId={studio.id} />
           </div>
         </div>
       </main>
