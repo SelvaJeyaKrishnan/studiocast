@@ -1,29 +1,17 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { siteConfig } from "@/config/site";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 
-interface NavbarProps {
-  onActionClick?: (actionName: string) => void;
-}
 
-export function Navbar({ onActionClick }: NavbarProps) {
+
+export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
-
-  const handleAction = (label: string) => {
-    if (onActionClick) {
-      onActionClick(label);
-    } else {
-      const banner = document.getElementById("about");
-      if (banner) {
-        banner.scrollIntoView({ behavior: "smooth" });
-      }
-    }
-  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-[#1a1e2b]/80 bg-[#090a0f]/90 backdrop-blur-md transition-all">
@@ -50,21 +38,23 @@ export function Navbar({ onActionClick }: NavbarProps) {
 
           {/* Right CTAs */}
           <div className="hidden md:flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleAction("Sign In")}
-              className="text-slate-400 hover:text-white"
-            >
-              Sign In
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => handleAction("Get Started")}
-            >
-              Get Started
-            </Button>
+            <Link href="/login">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-slate-400 hover:text-white"
+              >
+                Sign In
+              </Button>
+            </Link>
+            <Link href="/signup">
+              <Button
+                variant="primary"
+                size="sm"
+              >
+                Get Started
+              </Button>
+            </Link>
           </div>
 
           {/* Mobile Menu Toggle */}
@@ -102,28 +92,24 @@ export function Navbar({ onActionClick }: NavbarProps) {
             </div>
 
             <div className="pt-3 border-t border-[#1a1e2b] flex flex-col gap-2">
-              <Button
-                variant="outline"
-                size="md"
-                className="w-full justify-center"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  handleAction("Sign In");
-                }}
-              >
-                Sign In
-              </Button>
-              <Button
-                variant="primary"
-                size="md"
-                className="w-full justify-center"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  handleAction("Get Started");
-                }}
-              >
-                Get Started
-              </Button>
+              <Link href="/login" onClick={() => setMobileMenuOpen(false)} className="w-full">
+                <Button
+                  variant="outline"
+                  size="md"
+                  className="w-full justify-center"
+                >
+                  Sign In
+                </Button>
+              </Link>
+              <Link href="/signup" onClick={() => setMobileMenuOpen(false)} className="w-full">
+                <Button
+                  variant="primary"
+                  size="md"
+                  className="w-full justify-center"
+                >
+                  Get Started
+                </Button>
+              </Link>
             </div>
           </div>
         )}

@@ -2,21 +2,12 @@
 
 import * as React from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Mic2, Sliders, Users, ArrowRight } from "lucide-react";
 import { Container } from "@/components/ui/container";
 import { Button } from "@/components/ui/button";
 
 export function LandingPage() {
-  const [activeNotice, setActiveNotice] = React.useState<string | null>(null);
-
-  const handleAction = (label: string) => {
-    setActiveNotice(label);
-    const target = document.getElementById("about");
-    if (target) {
-      target.scrollIntoView({ behavior: "smooth" });
-    }
-  };
-
   return (
     <div className="flex flex-col flex-1">
       {/* ========================================================
@@ -38,13 +29,14 @@ export function LandingPage() {
           </p>
 
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-            <Button
-              size="lg"
-              variant="primary"
-              onClick={() => handleAction("Get Started")}
-            >
-              Get Started
-            </Button>
+            <Link href="/signup">
+              <Button
+                size="lg"
+                variant="primary"
+              >
+                Get Started
+              </Button>
+            </Link>
             <a href="#features">
               <Button size="lg" variant="secondary">
                 Explore Features
@@ -98,15 +90,15 @@ export function LandingPage() {
                   <Mic2 className="w-5 h-5" />
                 </div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-lg font-medium text-white">
-                    High-Quality Recording
+                  <h3 className="text-lg font-semibold text-white">
+                    Local Track Isolation
                   </h3>
-                  <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-violet-950/60 text-violet-300 border border-violet-800/40">
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20">
                     Planned
                   </span>
                 </div>
                 <p className="text-sm text-slate-400 leading-relaxed">
-                  Capture uncompressed, studio-grade audio and crisp video directly on each participant&apos;s device, completely independent of internet connection stability.
+                  Record pristine audio and video locally in each participant&apos;s browser. Zero compression artifacts from weak internet connections.
                 </p>
               </div>
             </div>
@@ -115,18 +107,18 @@ export function LandingPage() {
             <div className="p-8 rounded-2xl border border-[#1a1e2b] bg-[#0e1118] hover:border-[#242a3b] transition-colors flex flex-col justify-between">
               <div>
                 <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400 mb-6">
-                  <Sliders className="w-5 h-5" />
+                  <Users className="w-5 h-5" />
                 </div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-lg font-medium text-white">
-                    Separate Participant Tracks
+                  <h3 className="text-lg font-semibold text-white">
+                    Guest Waiting Rooms
                   </h3>
-                  <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-violet-950/60 text-violet-300 border border-violet-800/40">
-                    Planned
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Active
                   </span>
                 </div>
                 <p className="text-sm text-slate-400 leading-relaxed">
-                  Every speaker is recorded as an isolated audio and video track. Mix, level, and edit each voice independently in your favorite editing software.
+                  Invite co-hosts and guests with a single click. Cryptographically secure invitation links without requiring guest account setup.
                 </p>
               </div>
             </div>
@@ -135,18 +127,18 @@ export function LandingPage() {
             <div className="p-8 rounded-2xl border border-[#1a1e2b] bg-[#0e1118] hover:border-[#242a3b] transition-colors flex flex-col justify-between">
               <div>
                 <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400 mb-6">
-                  <Users className="w-5 h-5" />
+                  <Sliders className="w-5 h-5" />
                 </div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-lg font-medium text-white">
-                    Remote Guest Collaboration
+                  <h3 className="text-lg font-semibold text-white">
+                    Studio Control Room
                   </h3>
-                  <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-violet-950/60 text-violet-300 border border-violet-800/40">
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20">
                     Planned
                   </span>
                 </div>
                 <p className="text-sm text-slate-400 leading-relaxed">
-                  Invite co-hosts and guests with a single shareable link. No software downloads or account signups needed for your guests to join.
+                  Live session management, individual volume meters, and separate track downloads ready for professional post-production.
                 </p>
               </div>
             </div>
@@ -155,7 +147,7 @@ export function LandingPage() {
       </section>
 
       {/* ========================================================
-          3. HOW IT WORKS
+          3. HOW IT WORKS (3 Simple Steps)
           ======================================================== */}
       <section
         id="how-it-works"
@@ -167,21 +159,21 @@ export function LandingPage() {
               Workflow
             </p>
             <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight text-white">
-              Three simple steps to record
+              Three simple steps to studio quality
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Step 1 */}
             <div className="p-8 rounded-2xl border border-[#1a1e2b] bg-[#0e1118]">
               <span className="text-xs font-mono text-violet-400 block mb-4">
                 01
               </span>
               <h3 className="text-lg font-medium text-white mb-2">
-                Create Your Studio
+                Create a Studio
               </h3>
               <p className="text-sm text-slate-400 leading-relaxed">
-                Launch a recording room directly in your browser. Configure your microphone and camera with a live preview.
+                Set up a secure studio session in seconds with dedicated workspace organization and cloud project management.
               </p>
             </div>
 
@@ -191,10 +183,10 @@ export function LandingPage() {
                 02
               </span>
               <h3 className="text-lg font-medium text-white mb-2">
-                Invite Your Guests
+                Invite Guests
               </h3>
               <p className="text-sm text-slate-400 leading-relaxed">
-                Send a secure invite link to your guests. They join instantly from any modern web browser without installing anything.
+                Send a secure invitation link to your guests. They join directly from their browser without creating an account.
               </p>
             </div>
 
@@ -227,15 +219,10 @@ export function LandingPage() {
               Platform Status
             </p>
             <h3 className="text-xl font-semibold text-white">
-              StudioCast is in active development
+              StudioCast is live in active production
             </h3>
-            {activeNotice && (
-              <p className="text-xs text-violet-300 font-mono">
-                Requested: {activeNotice}
-              </p>
-            )}
             <p className="text-sm text-slate-400 leading-relaxed max-w-lg mx-auto">
-              We are currently finalizing our local recording engine and guest connection architecture. Full recording functionality will be available in an upcoming release.
+              Supabase authentication, studio management, and guest waiting room architecture are live. WebRTC audio/video capture engine is scheduled for upcoming release.
             </p>
           </div>
         </Container>
@@ -251,18 +238,19 @@ export function LandingPage() {
           </h2>
 
           <p className="mt-4 text-base sm:text-lg text-slate-400 max-w-md">
-            Join the waitlist to be among the first to experience StudioCast.
+            Sign up now and start setting up your custom podcast recording studios.
           </p>
 
           <div className="mt-8">
-            <Button
-              size="lg"
-              variant="primary"
-              onClick={() => handleAction("Waitlist Signup")}
-            >
-              Get Started
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
+            <Link href="/signup">
+              <Button
+                size="lg"
+                variant="primary"
+              >
+                Get Started
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </Link>
           </div>
         </Container>
       </section>
