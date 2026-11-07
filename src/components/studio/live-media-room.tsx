@@ -11,6 +11,7 @@ import {
   AlertCircle,
   Loader2,
   Volume2,
+  UserX,
 } from "lucide-react";
 import {
   Room,
@@ -44,6 +45,7 @@ interface LiveMediaRoomProps {
   roomTitle: string;
   onLeave: () => void;
   headerSlot?: React.ReactNode;
+  onRemoveGuest?: (guestId: string) => Promise<void>;
 }
 
 export function LiveMediaRoom({
@@ -54,6 +56,7 @@ export function LiveMediaRoom({
   roomTitle,
   onLeave,
   headerSlot,
+  onRemoveGuest,
 }: LiveMediaRoomProps) {
   const roomRef = React.useRef<Room | null>(null);
   const [connectionState, setConnectionState] = React.useState<ConnectionState>(
@@ -350,7 +353,12 @@ export function LiveMediaRoom({
         ) : (
           <div className={`grid gap-4 w-full mx-auto ${getGridClass()}`}>
             {participantList.map((p) => (
-              <ParticipantTile key={p.identity} participant={p} />
+              <ParticipantTile
+                key={p.identity}
+                participant={p}
+                isHostUser={isHost}
+                onRemoveGuest={onRemoveGuest}
+              />
             ))}
           </div>
         )}
@@ -369,7 +377,7 @@ export function LiveMediaRoom({
             title={isMicEnabled ? "Mute Microphone" : "Unmute Microphone"}
           >
             {isMicEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-            <span className="text-xs">{isMicEnabled ? "Mute" : "Unmuted"}</span>
+            <span className="text-xs">{isMicEnabled ? "Mute" : "Unmute"}</span>
           </Button>
 
           {/* Camera Toggle */}
@@ -406,7 +414,17 @@ export function LiveMediaRoom({
 /**
  * Individual Participant Video & Audio Tile
  */
-function ParticipantTile({ participant }: { participant: ParticipantState }) {
+interface ParticipantTileProps {
+  participant: ParticipantState;
+  isHostUser?: boolean;
+  onRemoveGuest?: (guestId: string) => Promise<void>;
+}
+
+function ParticipantTile({
+  participant,
+  isHostUser = false,
+  onRemoveGuest,
+}: ParticipantTileProps) {
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
@@ -474,6 +492,25 @@ function ParticipantTile({ participant }: { participant: ParticipantState }) {
           <span className="text-xs text-slate-400 font-medium">{participant.name}</span>
         </div>
       )}
+
+      {/* Host Control: Kick/Remove Guest */}
+      {isHostUser &&
+        !participant.isLocal &&
+        participant.identity.startsWith("guest_") &&
+        onRemoveGuest && (
+          <button
+            type="button"
+            onClick={async (e) => {
+              e.stopPropagation();
+              const guestId = participant.identity.replace("guest_", "");
+              await onRemoveGuest(guestId);
+            }}
+            className="absolute top-3 left-3 p-1.5 rounded-lg bg-black/60 hover:bg-rose-500/30 border border-white/10 hover:border-rose-500/40 text-slate-300 hover:text-rose-300 backdrop-blur-md transition z-10"
+            title="Remove guest from studio"
+          >
+            <UserX className="w-3.5 h-3.5" />
+          </button>
+        )}
 
       {/* Participant Identity Badge */}
       <div className="absolute bottom-3 left-3 flex items-center gap-2 px-2.5 py-1 rounded-xl bg-black/60 backdrop-blur-md border border-white/10 text-xs text-white">

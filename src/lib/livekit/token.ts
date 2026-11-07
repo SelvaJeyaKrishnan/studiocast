@@ -7,6 +7,7 @@ export interface CreateLiveKitTokenOptions {
   name: string;
   metadata?: Record<string, unknown>;
   isHost?: boolean;
+  ttl?: string | number;
 }
 
 /**
@@ -19,6 +20,7 @@ export async function createLiveKitAccessToken({
   name,
   metadata,
   isHost = false,
+  ttl,
 }: CreateLiveKitTokenOptions): Promise<{ token: string; url: string }> {
   const config = getLiveKitServerConfig();
 
@@ -41,11 +43,14 @@ export async function createLiveKitAccessToken({
     grant.roomRecord = false; // Recording engine reserved for Phase 4
   }
 
+  // Enforce short TTL for guest tokens (300s = 5m) vs 6h for hosts
+  const effectiveTtl = ttl ?? (isHost ? "6h" : "300s");
+
   const at = new AccessToken(config.apiKey, config.apiSecret, {
     identity,
     name,
     metadata: metadata ? JSON.stringify(metadata) : undefined,
-    ttl: "6h",
+    ttl: effectiveTtl,
   });
 
   at.addGrant(grant);

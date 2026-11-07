@@ -9,12 +9,15 @@ import {
   Video,
   AlertCircle,
   Loader2,
+  Users,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getPublicSiteUrl } from "@/lib/utils/site-url";
 import { HostGuestManager } from "./host-guest-manager";
 import { LiveMediaRoom } from "@/components/studio/live-media-room";
 import { getHostLiveKitTokenAction } from "@/app/studio/actions/livekit-actions";
+import { removeGuestParticipantAction } from "@/app/studio/actions/guest-management-actions";
 import type { StudioRow } from "@/types/database";
 
 interface StudioRoomClientProps {
@@ -34,6 +37,7 @@ export function StudioRoomClient({ studio, host }: StudioRoomClientProps) {
   const [liveKitToken, setLiveKitToken] = React.useState<string | null>(null);
   const [liveKitUrl, setLiveKitUrl] = React.useState<string | null>(null);
   const [tokenError, setTokenError] = React.useState<string | null>(null);
+  const [isGuestDrawerOpen, setIsGuestDrawerOpen] = React.useState(false);
 
   const roomUrl =
     typeof window !== "undefined" && window.location.href
@@ -77,34 +81,76 @@ export function StudioRoomClient({ studio, host }: StudioRoomClientProps) {
   // If host has entered the live media session
   if (isLiveActive && liveKitToken && liveKitUrl) {
     return (
-      <LiveMediaRoom
-        token={liveKitToken}
-        liveKitUrl={liveKitUrl}
-        displayName={host.name}
-        isHost={true}
-        roomTitle={studio.name}
-        onLeave={handleLeaveLiveRoom}
-        headerSlot={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleCopy}
-            className="text-xs"
-          >
-            {copiedLink ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-400 mr-1.5" />
-                <span className="text-emerald-400">Copied</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5 mr-1.5" />
-                <span>Room Link</span>
-              </>
-            )}
-          </Button>
-        }
-      />
+      <div className="relative min-h-screen">
+        <LiveMediaRoom
+          token={liveKitToken}
+          liveKitUrl={liveKitUrl}
+          displayName={host.name}
+          isHost={true}
+          roomTitle={studio.name}
+          onLeave={handleLeaveLiveRoom}
+          onRemoveGuest={async (guestId) => {
+            await removeGuestParticipantAction(studio.id, guestId);
+          }}
+          headerSlot={
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsGuestDrawerOpen(true)}
+                className="text-xs"
+              >
+                <Users className="w-3.5 h-3.5 text-violet-400 mr-1.5" />
+                <span>Guests & Waiting Room</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopy}
+                className="text-xs"
+              >
+                {copiedLink ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400 mr-1.5" />
+                    <span className="text-emerald-400">Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 mr-1.5" />
+                    <span>Room Link</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          }
+        />
+
+        {/* In-Call Host Guest Manager Modal / Drawer */}
+        {isGuestDrawerOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border border-[#1a1e2b] bg-[#0e1118] p-6 sm:p-8 shadow-2xl relative space-y-6">
+              <div className="flex items-center justify-between pb-4 border-b border-[#1a1e2b]">
+                <div className="flex items-center gap-2.5">
+                  <Users className="w-5 h-5 text-violet-400" />
+                  <h2 className="text-lg font-bold text-white tracking-tight">
+                    Studio Guest Management
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsGuestDrawerOpen(false)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <HostGuestManager studioId={studio.id} />
+            </div>
+          </div>
+        )}
+      </div>
     );
   }
 

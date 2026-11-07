@@ -12,12 +12,18 @@ import {
   Loader2,
   X,
   Share2,
+  UserCheck,
+  UserX,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   createStudioInvitationAction,
   revokeStudioInvitationAction,
 } from "@/app/studio/actions/invitation-actions";
+import {
+  admitGuestParticipantAction,
+  removeGuestParticipantAction,
+} from "@/app/studio/actions/guest-management-actions";
 import { createClient } from "@/lib/supabase/client";
 import type { StudioInvitationRow, GuestParticipantRow } from "@/types/database";
 
@@ -36,6 +42,7 @@ export function HostGuestManager({ studioId }: HostGuestManagerProps) {
   const [recentlyCreatedUrl, setRecentlyCreatedUrl] = React.useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = React.useState(false);
   const [revokingId, setRevokingId] = React.useState<string | null>(null);
+  const [actionLoadingId, setActionLoadingId] = React.useState<string | null>(null);
 
   const loadData = React.useCallback(async () => {
     const supabase = createClient();
@@ -130,6 +137,7 @@ export function HostGuestManager({ studioId }: HostGuestManagerProps) {
 
   const handleRevokeInvitation = async (invitationId: string) => {
     setRevokingId(invitationId);
+    setErrorMessage(null);
     const res = await revokeStudioInvitationAction(invitationId);
 
     if (!res.success) {
@@ -138,6 +146,42 @@ export function HostGuestManager({ studioId }: HostGuestManagerProps) {
       void loadData();
     }
     setRevokingId(null);
+  };
+
+  const handleAdmitGuest = async (guestId: string) => {
+    setActionLoadingId(`admit_${guestId}`);
+    setErrorMessage(null);
+    try {
+      const res = await admitGuestParticipantAction(studioId, guestId);
+      if (!res.success) {
+        setErrorMessage(res.error || "Failed to admit guest.");
+      } else {
+        await loadData();
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to admit guest.";
+      setErrorMessage(msg);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleRemoveGuest = async (guestId: string) => {
+    setActionLoadingId(`remove_${guestId}`);
+    setErrorMessage(null);
+    try {
+      const res = await removeGuestParticipantAction(studioId, guestId);
+      if (!res.success) {
+        setErrorMessage(res.error || "Failed to remove guest.");
+      } else {
+        await loadData();
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to remove guest.";
+      setErrorMessage(msg);
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
   const handleCopyLink = async (url: string) => {
@@ -300,9 +344,69 @@ export function HostGuestManager({ studioId }: HostGuestManagerProps) {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                    Waiting
-                  </span>
+                  {guest.status === "waiting" && (
+                    <>
+                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                        Waiting
+                      </span>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => handleAdmitGuest(guest.id)}
+                        disabled={actionLoadingId !== null}
+                        className="text-xs h-7 px-2.5"
+                      >
+                        {actionLoadingId === `admit_${guest.id}` ? (
+                          <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                        ) : (
+                          <UserCheck className="w-3 h-3 mr-1" />
+                        )}
+                        <span>Admit</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRemoveGuest(guest.id)}
+                        disabled={actionLoadingId !== null}
+                        className="text-xs h-7 px-2 text-rose-400 hover:text-rose-300 hover:border-rose-500/30"
+                      >
+                        {actionLoadingId === `remove_${guest.id}` ? (
+                          <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                        ) : (
+                          <UserX className="w-3 h-3 mr-1" />
+                        )}
+                        <span>Decline</span>
+                      </Button>
+                    </>
+                  )}
+
+                  {guest.status === "admitted" && (
+                    <>
+                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        Admitted
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRemoveGuest(guest.id)}
+                        disabled={actionLoadingId !== null}
+                        className="text-xs h-7 px-2 text-rose-400 hover:text-rose-300 hover:border-rose-500/30"
+                      >
+                        {actionLoadingId === `remove_${guest.id}` ? (
+                          <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                        ) : (
+                          <UserX className="w-3 h-3 mr-1" />
+                        )}
+                        <span>Remove</span>
+                      </Button>
+                    </>
+                  )}
+
+                  {guest.status === "left" && (
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-500 border border-slate-700">
+                      Left
+                    </span>
+                  )}
                 </div>
               </div>
             ))}

@@ -36,7 +36,7 @@ export function GuestWaitingRoomClient({
   const [sessionSecret, setSessionSecret] = React.useState<string | null>(null);
   const [studioName, setStudioName] = React.useState<string>(initialStudioName || "Studio Room");
   const [displayName, setDisplayName] = React.useState<string>(initialDisplayName || "Guest");
-  const [, setStatus] = React.useState(initialStatus);
+  const [status, setStatus] = React.useState<string>(initialStatus);
   const [isLeaving, setIsLeaving] = React.useState(false);
   const [isVerifying, setIsVerifying] = React.useState(true);
   const [authError, setAuthError] = React.useState<string | null>(null);
@@ -110,17 +110,28 @@ export function GuestWaitingRoomClient({
         const res = await getGuestSessionAction(guestId, sessionSecret);
         if (res.success && res.session) {
           setStatus(res.session.status);
+          if (res.session.status === "left") {
+            setAuthError("Your session has ended or you were removed from the studio.");
+          }
+        } else if (!res.success) {
+          setAuthError(res.error || "Guest session is no longer active or was revoked.");
         }
       } catch {
         // Silent poll error catch
       }
-    }, 5000);
+    }, 4000);
 
     return () => clearInterval(interval);
   }, [guestId, sessionSecret, authError, isLiveActive]);
 
   const handleJoinLive = async () => {
     if (!sessionSecret) return;
+
+    if (status !== "admitted") {
+      setTokenError("You cannot enter yet. Please wait for the host to admit you.");
+      return;
+    }
+
     setIsTokenLoading(true);
     setTokenError(null);
 
@@ -242,6 +253,25 @@ export function GuestWaitingRoomClient({
             <p className="text-xs text-violet-400 font-medium">Guest in {studioName}</p>
           </div>
 
+          {/* Admission Status Feedback Banner */}
+          {status === "waiting" && (
+            <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-950/20 text-xs text-amber-300 flex items-center gap-2.5 text-left">
+              <Loader2 className="w-4 h-4 animate-spin shrink-0 text-amber-400" />
+              <span>
+                You are in the waiting room. The host has been notified and will admit you to the live room shortly.
+              </span>
+            </div>
+          )}
+
+          {status === "admitted" && (
+            <div className="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 text-xs text-emerald-300 flex items-center gap-2.5 text-left">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+              <span>
+                You have been admitted by the host! Click below to enter the live studio room.
+              </span>
+            </div>
+          )}
+
           {tokenError && (
             <div className="p-3 rounded-xl border border-rose-500/30 bg-rose-950/20 text-xs text-rose-300 flex items-center gap-2 text-left">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -255,13 +285,18 @@ export function GuestWaitingRoomClient({
               size="lg"
               variant="primary"
               onClick={handleJoinLive}
-              disabled={isTokenLoading}
-              className="w-full justify-center rounded-xl h-12 shadow-lg shadow-violet-600/25 font-semibold text-sm"
+              disabled={isTokenLoading || status !== "admitted"}
+              className="w-full justify-center rounded-xl h-12 shadow-lg shadow-violet-600/25 font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isTokenLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
                   <span>Connecting to Studio...</span>
+                </>
+              ) : status === "waiting" ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2 text-slate-400" />
+                  <span>Waiting for Host Admission...</span>
                 </>
               ) : (
                 <>

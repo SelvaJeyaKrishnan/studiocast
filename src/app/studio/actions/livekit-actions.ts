@@ -3,6 +3,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { hashGuestSessionSecret } from "@/lib/crypto/tokens";
 import { createLiveKitAccessToken } from "@/lib/livekit/token";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 
 export interface HostLiveKitTokenResult {
   success: boolean;
@@ -105,7 +107,8 @@ export async function getHostLiveKitTokenAction(
  */
 export async function getGuestLiveKitTokenAction(
   guestId: string,
-  sessionSecret: string
+  sessionSecret: string,
+  supabaseClient?: SupabaseClient<Database>
 ): Promise<GuestLiveKitTokenResult> {
   if (!guestId || !UUID_REGEX.test(guestId)) {
     return { success: false, error: "Invalid guest session identifier." };
@@ -116,7 +119,7 @@ export async function getGuestLiveKitTokenAction(
   }
 
   try {
-    const supabase = await createClient();
+    const supabase = supabaseClient ?? (await createClient());
     const sessionSecretHash = hashGuestSessionSecret(sessionSecret);
 
     // 1. Verify guest session ownership via hardened SECURITY DEFINER RPC
@@ -134,11 +137,18 @@ export async function getGuestLiveKitTokenAction(
 
     const guestSession = data[0];
 
-    // 2. Verify guest status
-    if (guestSession.status === "left") {
+    // 2. Verify guest status - MUST BE EXACTLY "admitted" to receive media token
+    if (guestSession.status !== "admitted") {
+      if (guestSession.status === "waiting") {
+        return {
+          success: false,
+          error:
+            "Unauthorized: Guest is in the waiting room and has not been admitted by the host.",
+        };
+      }
       return {
         success: false,
-        error: "This guest session has already ended.",
+        error: "Unauthorized: Guest session has ended or is not authorized.",
       };
     }
 
