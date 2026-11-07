@@ -45,7 +45,33 @@ export async function admitGuestParticipantAction(
   try {
     const supabase = supabaseClient ?? (await createClient());
 
-    // 1. Authenticate caller (Host)
+    // 1. Attempt atomic PostgreSQL RPC first (handles L1 -> L3 -> L4 row locking and state transition atomically)
+    try {
+      const { data: rpcData, error: rpcErr } = await supabase.rpc("admit_guest_participant", {
+        p_studio_id: studioId,
+        p_guest_id: guestId,
+      });
+
+      if (!rpcErr && rpcData && rpcData.length > 0) {
+        const res = rpcData[0];
+        if (res.success) {
+          return {
+            success: true,
+            guestId,
+            status: res.status || "admitted",
+          };
+        } else {
+          return {
+            success: false,
+            error: res.error_message || "Failed to admit guest.",
+          };
+        }
+      }
+    } catch {
+      // Graceful fallback to table-level verification if RPC is not available in current environment
+    }
+
+    // 2. Fallback: Authenticate caller (Host)
     const {
       data: { user },
       error: authErr,
@@ -187,7 +213,7 @@ export async function removeGuestParticipantAction(
     // 3. Fetch guest participant record
     const { data: guest, error: guestErr } = await supabase
       .from("guest_participants")
-      .select("id, studio_id, status, display_name")
+      .select("id, studio_id, invitation_id, status, display_name")
       .eq("id", guestId)
       .eq("studio_id", studioId)
       .single();
@@ -196,12 +222,96 @@ export async function removeGuestParticipantAction(
       return { success: false, error: "Guest participant not found in this studio." };
     }
 
+    const roomName = `studio_${studioId}`;
+    const identity = `guest_${guestId}`;
+    const revokeTokenTs = Math.floor(Date.now() / 1000) + 10;
+    const nowIso = new Date().toISOString();
+
+    // Check if guest is already 'left'
+    if (guest.status === "left") {
+      // Check if there is an uncompleted eviction in the durable queue to retry
+      let hasPendingQueue = false;
+      try {
+        const { data: pendingEviction } = await supabase
+          .from("pending_livekit_evictions")
+          .select("id, status")
+          .eq("room_name", roomName)
+          .eq("participant_identity", identity)
+          .neq("status", "completed")
+          .maybeSingle();
+
+        if (pendingEviction) {
+          hasPendingQueue = true;
+        }
+      } catch {
+        // Table may be absent
+      }
+
+      if (!hasPendingQueue) {
+        // Already removed and evicted cleanly
+        return {
+          success: true,
+          guestId: guest.id,
+          status: "left",
+          message: "Guest is already removed and evicted.",
+        };
+      }
+
+      // Retry eviction for the previously failed/pending guest
+      const evictRes = await evictFn({
+        roomName,
+        identity,
+        revokeTokenTs,
+      });
+
+      try {
+        if (evictRes.success) {
+          await supabase
+            .from("pending_livekit_evictions")
+            .update({
+              status: "completed",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("room_name", roomName)
+            .eq("participant_identity", identity);
+        } else {
+          await supabase
+            .from("pending_livekit_evictions")
+            .update({
+              status: "failed",
+              last_error: evictRes.error || "Eviction retry failed",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("room_name", roomName)
+            .eq("participant_identity", identity);
+        }
+      } catch {
+        // Table may be absent
+      }
+
+      if (!evictRes.success) {
+        return {
+          success: false,
+          guestId: guest.id,
+          status: "left",
+          partialFailure: true,
+          error: `Guest status is 'left', but LiveKit room eviction retry failed: ${evictRes.error}.`,
+        };
+      }
+
+      return {
+        success: true,
+        guestId: guest.id,
+        status: "left",
+      };
+    }
+
     // 4. Update database status to 'left'
     const { error: updateErr } = await supabase
       .from("guest_participants")
       .update({
         status: "left",
-        last_seen_at: new Date().toISOString(),
+        last_seen_at: nowIso,
       })
       .eq("id", guestId)
       .eq("studio_id", studioId);
@@ -210,19 +320,59 @@ export async function removeGuestParticipantAction(
       return { success: false, error: updateErr.message };
     }
 
-    // 5. Evict participant from LiveKit Room
-    const roomName = `studio_${studioId}`;
-    const identity = `guest_${guestId}`;
-    const revokeTokenTs = Math.floor(Date.now() / 1000) + 10;
+    // 5. Persistently record pending eviction
+    try {
+      await supabase.from("pending_livekit_evictions").upsert(
+        {
+          studio_id: studioId,
+          invitation_id: guest.invitation_id ?? null,
+          guest_id: guestId,
+          room_name: roomName,
+          participant_identity: identity,
+          revoke_token_ts: revokeTokenTs,
+          status: "pending",
+          attempts: 0,
+          updated_at: nowIso,
+        },
+        { onConflict: "room_name,participant_identity" }
+      );
+    } catch {
+      // Table may be absent
+    }
 
+    // 6. Evict participant from LiveKit Room
     const evictRes = await evictFn({
       roomName,
       identity,
       revokeTokenTs,
     });
 
+    try {
+      if (evictRes.success) {
+        await supabase
+          .from("pending_livekit_evictions")
+          .update({
+            status: "completed",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("room_name", roomName)
+          .eq("participant_identity", identity);
+      } else {
+        await supabase
+          .from("pending_livekit_evictions")
+          .update({
+            status: "failed",
+            last_error: evictRes.error || "Eviction failed",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("room_name", roomName)
+          .eq("participant_identity", identity);
+      }
+    } catch {
+      // Table may be absent
+    }
+
     if (!evictRes.success) {
-      // Partial failure: database updated to 'left', but LiveKit eviction failed
       return {
         success: false,
         guestId: guest.id,

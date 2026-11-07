@@ -212,11 +212,86 @@ export interface Database {
           }
         ];
       };
+      pending_livekit_evictions: {
+        Row: {
+          id: string;
+          studio_id: string;
+          invitation_id: string | null;
+          guest_id: string | null;
+          room_name: string;
+          participant_identity: string;
+          revoke_token_ts: number;
+          status: "pending" | "failed" | "completed";
+          attempts: number;
+          last_error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          studio_id: string;
+          invitation_id?: string | null;
+          guest_id?: string | null;
+          room_name: string;
+          participant_identity: string;
+          revoke_token_ts: number;
+          status?: "pending" | "failed" | "completed";
+          attempts?: number;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          studio_id?: string;
+          invitation_id?: string | null;
+          guest_id?: string | null;
+          room_name?: string;
+          participant_identity?: string;
+          revoke_token_ts?: number;
+          status?: "pending" | "failed" | "completed";
+          attempts?: number;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "pending_livekit_evictions_studio_id_fkey";
+            columns: ["studio_id"];
+            referencedRelation: "studios";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "pending_livekit_evictions_invitation_id_fkey";
+            columns: ["invitation_id"];
+            referencedRelation: "studio_invitations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "pending_livekit_evictions_guest_id_fkey";
+            columns: ["guest_id"];
+            referencedRelation: "guest_participants";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
+      admit_guest_participant: {
+        Args: {
+          p_studio_id: string;
+          p_guest_id: string;
+        };
+        Returns: {
+          success: boolean;
+          status: string | null;
+          error_message: string | null;
+        }[];
+      };
       verify_guest_invitation: {
         Args: {
           p_token_hash: string;
@@ -278,3 +353,4 @@ export type ProjectRow = Database["public"]["Tables"]["projects"]["Row"];
 export type StudioRow = Database["public"]["Tables"]["studios"]["Row"];
 export type StudioInvitationRow = Database["public"]["Tables"]["studio_invitations"]["Row"];
 export type GuestParticipantRow = Database["public"]["Tables"]["guest_participants"]["Row"];
+export type PendingLiveKitEvictionRow = Database["public"]["Tables"]["pending_livekit_evictions"]["Row"];

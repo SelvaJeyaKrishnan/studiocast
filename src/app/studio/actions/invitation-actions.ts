@@ -27,6 +27,19 @@ export interface RevokeInvitationResult {
   }>;
 }
 
+export interface RetryPendingEvictionsResult {
+  success: boolean;
+  pendingCount: number;
+  completedCount: number;
+  failedCount: number;
+  error?: string;
+  results?: Array<{
+    identity: string;
+    success: boolean;
+    error?: string;
+  }>;
+}
+
 /**
  * Server action: Creates a secure, cryptographically random guest invitation token.
  * Only the SHA-256 hash is saved to the database.
@@ -150,21 +163,7 @@ export async function revokeStudioInvitationAction(
       return { success: false, error: "Studio ownership verification failed." };
     }
 
-    // 4. Query all guest participants associated with this invitation who are not left
-    const { data: activeGuests, error: guestFetchErr } = await supabase
-      .from("guest_participants")
-      .select("id, status")
-      .eq("invitation_id", invitationId)
-      .neq("status", "left");
-
-    if (guestFetchErr) {
-      return {
-        success: false,
-        error: `Failed to query guest sessions: ${guestFetchErr.message}`,
-      };
-    }
-
-    // 5. Update database: Mark invitation revoked and all guest sessions as 'left'
+    // 4. Update database: Mark invitation revoked immediately
     const nowIso = new Date().toISOString();
 
     const { error: invUpdateErr } = await supabase
@@ -180,6 +179,43 @@ export async function revokeStudioInvitationAction(
       return { success: false, error: `Failed to revoke invitation: ${invUpdateErr.message}` };
     }
 
+    // 5. Query active guests for this invitation AND any previously pending/failed evictions
+    const { data: activeGuests, error: guestFetchErr } = await supabase
+      .from("guest_participants")
+      .select("id, status")
+      .eq("invitation_id", invitationId)
+      .neq("status", "left");
+
+    if (guestFetchErr) {
+      return {
+        success: false,
+        error: `Failed to query guest sessions: ${guestFetchErr.message}`,
+      };
+    }
+
+    // Check for durable pending evictions from previous failed attempts or server restarts
+    let existingPendingEvictions: Array<{
+      id: string;
+      participant_identity: string;
+      guest_id: string | null;
+      attempts: number;
+    }> = [];
+
+    try {
+      const { data: queueData } = await supabase
+        .from("pending_livekit_evictions")
+        .select("id, participant_identity, guest_id, attempts")
+        .eq("invitation_id", invitationId)
+        .neq("status", "completed");
+
+      if (queueData) {
+        existingPendingEvictions = queueData;
+      }
+    } catch {
+      // Graceful fallback if migration not yet applied
+    }
+
+    // Update newly discovered active guests to 'left'
     if (activeGuests && activeGuests.length > 0) {
       const { error: guestUpdateErr } = await supabase
         .from("guest_participants")
@@ -198,38 +234,95 @@ export async function revokeStudioInvitationAction(
       }
     }
 
-    // 6. Evict all connected / active guests from the LiveKit room
-    const guestsToEvict = activeGuests || [];
-    let evictionResult: {
-      allSuccessful: boolean;
-      successfulCount: number;
-      failedCount: number;
-      results: Array<{ success: boolean; identity: string; error?: string }>;
-    } = {
-      allSuccessful: true,
-      successfulCount: 0,
-      failedCount: 0,
-      results: [],
-    };
+    // Build consolidated list of participant identities needing LiveKit eviction
+    const roomName = `studio_${invitation.studio_id}`;
+    const revokeTokenTs = Math.floor(Date.now() / 1000) + 10;
+    const identityMap = new Map<string, { guestId?: string }>();
 
-    if (guestsToEvict.length > 0) {
-      const roomName = `studio_${invitation.studio_id}`;
-      const identities = guestsToEvict.map((g: { id: string }) => `guest_${g.id}`);
-      const revokeTokenTs = Math.floor(Date.now() / 1000) + 10;
-
-      evictionResult = await evictAllFn(
-        roomName,
-        identities,
-        revokeTokenTs
-      );
+    // Add newly transitioned guests
+    for (const g of activeGuests || []) {
+      identityMap.set(`guest_${g.id}`, { guestId: g.id });
     }
 
-    // 7. Handle partial failure between database and LiveKit
+    // Add previously pending/failed evictions
+    for (const p of existingPendingEvictions) {
+      identityMap.set(p.participant_identity, { guestId: p.guest_id ?? undefined });
+    }
+
+    const identitiesToEvict = Array.from(identityMap.keys());
+
+    // Record new pending evictions persistently before executing network calls
+    if (identitiesToEvict.length > 0) {
+      try {
+        const recordsToQueue = identitiesToEvict.map((identity) => ({
+          studio_id: invitation.studio_id,
+          invitation_id: invitationId,
+          guest_id: identityMap.get(identity)?.guestId ?? null,
+          room_name: roomName,
+          participant_identity: identity,
+          revoke_token_ts: revokeTokenTs,
+          status: "pending" as const,
+          attempts: 0,
+          updated_at: nowIso,
+        }));
+
+        await supabase
+          .from("pending_livekit_evictions")
+          .upsert(recordsToQueue, { onConflict: "room_name,participant_identity" });
+      } catch {
+        // Graceful fallback if table is unavailable
+      }
+    }
+
+    // If no participants need eviction, return success (idempotent retry)
+    if (identitiesToEvict.length === 0) {
+      return {
+        success: true,
+        revokedGuestCount: 0,
+      };
+    }
+
+    // 6. Evict participants from LiveKit room
+    const evictionResult = await evictAllFn(
+      roomName,
+      identitiesToEvict,
+      revokeTokenTs
+    );
+
+    // 7. Update eviction queue records persistently based on LiveKit response
+    for (const res of evictionResult.results) {
+      try {
+        if (res.success) {
+          await supabase
+            .from("pending_livekit_evictions")
+            .update({
+              status: "completed",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("room_name", roomName)
+            .eq("participant_identity", res.identity);
+        } else {
+          await supabase
+            .from("pending_livekit_evictions")
+            .update({
+              status: "failed",
+              last_error: res.error || "Eviction failed",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("room_name", roomName)
+            .eq("participant_identity", res.identity);
+        }
+      } catch {
+        // Table may be absent
+      }
+    }
+
+    // 8. Handle partial failure
     if (!evictionResult.allSuccessful) {
       return {
         success: false,
         partialFailure: true,
-        revokedGuestCount: guestsToEvict.length,
+        revokedGuestCount: identitiesToEvict.length,
         error: `Invitation revoked in database, but LiveKit room eviction failed for ${evictionResult.failedCount} participant(s). Please retry to force eviction.`,
         evictionResults: evictionResult.results,
       };
@@ -237,10 +330,120 @@ export async function revokeStudioInvitationAction(
 
     return {
       success: true,
-      revokedGuestCount: guestsToEvict.length,
+      revokedGuestCount: identitiesToEvict.length,
     };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to revoke invitation.";
     return { success: false, error: message };
+  }
+}
+
+/**
+ * Server action: Retries all pending or failed LiveKit evictions for a studio.
+ * Safe and idempotent. Retries eviction without altering guest authorization or status.
+ */
+export async function retryPendingEvictionsAction(
+  studioId: string,
+  supabaseClient?: SupabaseClient<Database>,
+  liveKitService?: { evictLiveKitParticipants: typeof evictLiveKitParticipants }
+): Promise<RetryPendingEvictionsResult> {
+  try {
+    const supabase = supabaseClient ?? (await createClient());
+    const evictAllFn = liveKitService?.evictLiveKitParticipants ?? evictLiveKitParticipants;
+
+    // 1. Authenticate host
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabase.auth.getUser();
+
+    if (authErr || !user) {
+      return { success: false, pendingCount: 0, completedCount: 0, failedCount: 0, error: "Unauthorized." };
+    }
+
+    // 2. Verify studio ownership (L1)
+    const { data: studio, error: studioErr } = await supabase
+      .from("studios")
+      .select("id, owner_id")
+      .eq("id", studioId)
+      .eq("owner_id", user.id)
+      .single();
+
+    if (studioErr || !studio) {
+      return { success: false, pendingCount: 0, completedCount: 0, failedCount: 0, error: "Studio not found or access denied." };
+    }
+
+    // 3. Query pending or failed evictions
+    const { data: pendingRows, error: fetchErr } = await supabase
+      .from("pending_livekit_evictions")
+      .select("id, room_name, participant_identity, attempts")
+      .eq("studio_id", studioId)
+      .in("status", ["pending", "failed"]);
+
+    if (fetchErr) {
+      return {
+        success: false,
+        pendingCount: 0,
+        completedCount: 0,
+        failedCount: 0,
+        error: `Failed to query pending evictions: ${fetchErr.message}`,
+      };
+    }
+
+    if (!pendingRows || pendingRows.length === 0) {
+      return {
+        success: true,
+        pendingCount: 0,
+        completedCount: 0,
+        failedCount: 0,
+      };
+    }
+
+    const roomName = `studio_${studioId}`;
+    const identities = pendingRows.map((r) => r.participant_identity);
+    const revokeTokenTs = Math.floor(Date.now() / 1000) + 10;
+
+    const evictionResult = await evictAllFn(roomName, identities, revokeTokenTs);
+
+    const nowIso = new Date().toISOString();
+    for (const res of evictionResult.results) {
+      if (res.success) {
+        await supabase
+          .from("pending_livekit_evictions")
+          .update({
+            status: "completed",
+            updated_at: nowIso,
+          })
+          .eq("room_name", roomName)
+          .eq("participant_identity", res.identity);
+      } else {
+        await supabase
+          .from("pending_livekit_evictions")
+          .update({
+            status: "failed",
+            last_error: res.error || "Eviction retry failed",
+            updated_at: nowIso,
+          })
+          .eq("room_name", roomName)
+          .eq("participant_identity", res.identity);
+      }
+    }
+
+    return {
+      success: evictionResult.allSuccessful,
+      pendingCount: evictionResult.failedCount,
+      completedCount: evictionResult.successfulCount,
+      failedCount: evictionResult.failedCount,
+      results: evictionResult.results,
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to retry pending evictions.";
+    return {
+      success: false,
+      pendingCount: 0,
+      completedCount: 0,
+      failedCount: 0,
+      error: message,
+    };
   }
 }

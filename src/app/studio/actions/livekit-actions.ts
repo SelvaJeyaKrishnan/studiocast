@@ -180,3 +180,17 @@ export async function getGuestLiveKitTokenAction(
     return { success: false, error: msg };
   }
 }
+
+/**
+ * Server action: Safe guest token refresh for connection recovery.
+ * Re-validates that guest participant is admitted, invitation is active and unexpired,
+ * and issues a fresh token with standard 300s TTL.
+ */
+export async function refreshGuestLiveKitTokenAction(
+  guestId: string,
+  sessionSecret: string,
+  supabaseClient?: SupabaseClient<Database>
+): Promise<GuestLiveKitTokenResult> {
+  return getGuestLiveKitTokenAction(guestId, sessionSecret, supabaseClient);
+}
+

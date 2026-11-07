@@ -12,6 +12,7 @@ import {
   Loader2,
   Volume2,
   UserX,
+  RefreshCw,
 } from "lucide-react";
 import {
   Room,
@@ -22,6 +23,7 @@ import {
   RemoteParticipant,
   TrackPublication,
   ConnectionState,
+  DisconnectReason,
 } from "livekit-client";
 import { Button } from "@/components/ui/button";
 
@@ -46,6 +48,7 @@ interface LiveMediaRoomProps {
   onLeave: () => void;
   headerSlot?: React.ReactNode;
   onRemoveGuest?: (guestId: string) => Promise<void>;
+  onTokenRefreshNeeded?: () => Promise<{ token: string; url: string } | null>;
 }
 
 export function LiveMediaRoom({
@@ -57,12 +60,16 @@ export function LiveMediaRoom({
   onLeave,
   headerSlot,
   onRemoveGuest,
+  onTokenRefreshNeeded,
 }: LiveMediaRoomProps) {
   const roomRef = React.useRef<Room | null>(null);
   const [connectionState, setConnectionState] = React.useState<ConnectionState>(
     ConnectionState.Connecting
   );
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [isTerminalRemoval, setIsTerminalRemoval] = React.useState(false);
+  const [isReconnecting, setIsReconnecting] = React.useState(false);
+  const isReconnectingRef = React.useRef(false);
   const [isMicEnabled, setIsMicEnabled] = React.useState(true);
   const [isCameraEnabled, setIsCameraEnabled] = React.useState(true);
   const [participants, setParticipants] = React.useState<Map<string, ParticipantState>>(
@@ -139,6 +146,56 @@ export function LiveMediaRoom({
     [extractParticipantState]
   );
 
+  // Reconnect with a fresh token on recoverable connection failure
+  const handleRecoverableReconnect = React.useCallback(async () => {
+    if (isReconnectingRef.current) return;
+    isReconnectingRef.current = true;
+    setIsReconnecting(true);
+    setConnectionState(ConnectionState.Connecting);
+    setErrorMessage("Connection interrupted. Re-authenticating session and reconnecting...");
+
+    try {
+      if (!onTokenRefreshNeeded) {
+        throw new Error("No token refresh handler configured.");
+      }
+
+      const freshCredentials = await onTokenRefreshNeeded();
+      if (!freshCredentials || !freshCredentials.token || !freshCredentials.url) {
+        throw new Error(
+          "Reconnection denied: guest session is no longer active or was revoked."
+        );
+      }
+
+      const room = roomRef.current;
+      if (!room) {
+        throw new Error("LiveKit Room instance is not available.");
+      }
+
+      // Reconnect using public documented Room.connect API
+      await room.connect(freshCredentials.url, freshCredentials.token);
+
+      // Re-enable local tracks if previously enabled
+      try {
+        if (isCameraEnabled || isMicEnabled) {
+          await room.localParticipant.enableCameraAndMicrophone();
+        }
+      } catch {
+        // Non-fatal if media devices fail to re-enable
+      }
+
+      setErrorMessage(null);
+      setIsReconnecting(false);
+      isReconnectingRef.current = false;
+      syncParticipants(room);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Reconnection failed.";
+      setErrorMessage(msg);
+      setIsReconnecting(false);
+      isReconnectingRef.current = false;
+      setConnectionState(ConnectionState.Disconnected);
+    }
+  }, [onTokenRefreshNeeded, isCameraEnabled, isMicEnabled, syncParticipants]);
+
   // Connect to LiveKit Room
   React.useEffect(() => {
     let isCancelled = false;
@@ -168,9 +225,30 @@ export function LiveMediaRoom({
             if (isCancelled) return;
             syncParticipants(room);
           })
-          .on(RoomEvent.Disconnected, () => {
+          .on(RoomEvent.Disconnected, async (reason?: DisconnectReason) => {
             if (isCancelled) return;
-            setConnectionState(ConnectionState.Disconnected);
+            console.log("[LiveMediaRoom] Disconnected with reason:", reason);
+
+            // 1. Participant evicted by host / server revocation
+            if (reason === DisconnectReason.PARTICIPANT_REMOVED) {
+              setIsTerminalRemoval(true);
+              setConnectionState(ConnectionState.Disconnected);
+              setErrorMessage("You were removed from the studio by the host.");
+              return;
+            }
+
+            // 2. Client voluntarily disconnected
+            if (reason === DisconnectReason.CLIENT_INITIATED) {
+              setConnectionState(ConnectionState.Disconnected);
+              return;
+            }
+
+            // 3. Recoverable disconnect: connection timeout, signal close, network drop
+            if (onTokenRefreshNeeded && !isHost) {
+              await handleRecoverableReconnect();
+            } else {
+              setConnectionState(ConnectionState.Disconnected);
+            }
           })
           .on(RoomEvent.ParticipantConnected, () => syncParticipants(room))
           .on(RoomEvent.ParticipantDisconnected, () => syncParticipants(room))
@@ -245,7 +323,14 @@ export function LiveMediaRoom({
         roomRef.current = null;
       }
     };
-  }, [liveKitUrl, token, syncParticipants]);
+  }, [
+    liveKitUrl,
+    token,
+    syncParticipants,
+    handleRecoverableReconnect,
+    isHost,
+    onTokenRefreshNeeded,
+  ]);
 
   // Toggle Microphone
   const toggleMicrophone = async () => {
@@ -294,6 +379,27 @@ export function LiveMediaRoom({
     return "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 max-w-7xl";
   };
 
+  if (isTerminalRemoval) {
+    return (
+      <div className="min-h-screen bg-[#090a0f] text-slate-100 flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md p-8 rounded-2xl border border-rose-500/30 bg-[#0e1118] text-center space-y-5 shadow-2xl">
+          <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto">
+            <UserX className="w-6 h-6" />
+          </div>
+          <div className="space-y-1.5">
+            <h1 className="text-xl font-semibold text-white">Removed from Studio</h1>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              The studio host has removed you from this session. You can no longer participate in this studio room.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={onLeave} className="w-full justify-center">
+            Leave Studio
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-[#090a0f] text-slate-100">
       {/* Top Header */}
@@ -304,7 +410,7 @@ export function LiveMediaRoom({
               className={`w-2.5 h-2.5 rounded-full ${
                 connectionState === ConnectionState.Connected
                   ? "bg-emerald-400 animate-pulse"
-                  : connectionState === ConnectionState.Connecting
+                  : isReconnecting || connectionState === ConnectionState.Connecting
                   ? "bg-amber-400 animate-pulse"
                   : "bg-rose-500"
               }`}
@@ -312,6 +418,8 @@ export function LiveMediaRoom({
             <span className="text-xs font-medium text-slate-300">
               {connectionState === ConnectionState.Connected
                 ? "Live Studio"
+                : isReconnecting
+                ? "Reconnecting to studio..."
                 : connectionState === ConnectionState.Connecting
                 ? "Connecting..."
                 : "Disconnected"}
@@ -336,10 +444,31 @@ export function LiveMediaRoom({
 
       {/* Main Grid Viewport */}
       <main className="flex-1 p-4 sm:p-6 flex flex-col justify-center items-center overflow-y-auto">
+        {isReconnecting && (
+          <div className="mb-4 max-w-lg w-full p-3 rounded-xl border border-amber-500/30 bg-amber-950/20 text-xs text-amber-300 flex items-center gap-2 animate-pulse">
+            <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+            <span>Connection lost. Re-authenticating session and reconnecting to media room...</span>
+          </div>
+        )}
+
         {errorMessage && (
-          <div className="mb-4 max-w-lg w-full p-3 rounded-xl border border-rose-500/30 bg-rose-950/20 text-xs text-rose-300 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{errorMessage}</span>
+          <div className="mb-4 max-w-lg w-full p-3 rounded-xl border border-rose-500/30 bg-rose-950/20 text-xs text-rose-300 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+            {!isHost && onTokenRefreshNeeded && connectionState === ConnectionState.Disconnected && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleRecoverableReconnect}
+                className="text-[11px] h-7 gap-1 px-2 shrink-0 border-rose-500/30 hover:bg-rose-500/20 text-rose-200"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Retry</span>
+              </Button>
+            )}
           </div>
         )}
 

@@ -190,6 +190,16 @@ export function GuestWaitingRoomClient({
         isHost={false}
         roomTitle={studioName}
         onLeave={handleLeaveLiveRoom}
+        onTokenRefreshNeeded={async () => {
+          if (!sessionSecret) return null;
+          const res = await getGuestLiveKitTokenAction(guestId, sessionSecret);
+          if (!res.success || !res.token || !res.url) {
+            return null;
+          }
+          setLiveKitToken(res.token);
+          setLiveKitUrl(res.url);
+          return { token: res.token, url: res.url };
+        }}
       />
     );
   }
